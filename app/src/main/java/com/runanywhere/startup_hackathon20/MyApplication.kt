@@ -10,13 +10,12 @@ import com.runanywhere.sdk.llm.llamacpp.LlamaCppServiceProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-
-        // Initialize SDK asynchronously
         GlobalScope.launch(Dispatchers.IO) {
             initializeSDK()
         }
@@ -26,37 +25,54 @@ class MyApplication : Application() {
         try {
             Log.i("MyApp", "⚙️ Initializing RunAnywhere SDK...")
 
-            // Step 1: Initialize SDK
             RunAnywhere.initialize(
                 context = this@MyApplication,
-                apiKey = "dev",  // Any string works in dev mode
+                apiKey = "dev",
                 environment = SDKEnvironment.DEVELOPMENT
             )
 
-            // Step 2: Register LLM Service Provider
             LlamaCppServiceProvider.register()
             Log.i("MyApp", "✅ LlamaCpp service provider registered")
 
-            // Step 3: Register models
             registerModels()
-            Log.i("MyApp", "✅ Model registration complete")
 
-            // Step 4: Scan for previously downloaded models
             RunAnywhere.scanForDownloadedModels()
             Log.i("MyApp", "🔍 Scanned for downloaded models")
-            try {
-                val success = RunAnywhere.loadModel("SmolLM2 360M Q8_0")
-                if (success) {
-                    Log.i("MyApp", "🚀 Successfully loaded SmolLM2 model directly in MyApplication.kt")
-                } else {
-                    Log.w("MyApp", "⚠️ Model load returned false — likely memory limit on emulator")
+
+            val modelDir = File(getExternalFilesDir(null), "models/llama_cpp")
+            Log.i("MyApp", "📂 Expected model directory: ${modelDir.absolutePath}")
+            if (!modelDir.exists()) modelDir.mkdirs()
+
+            val modelFile = File(modelDir, "smollm2-360m-q8_0.gguf")
+
+            if (!modelFile.exists()) {
+                Log.w("MyApp", "⚠️ Model file missing — forcing re-download...")
+                val modelUrl = "https://huggingface.co/Triangle104/SmolLM2-360M-Q8_0-GGUF/resolve/main/smollm2-360m-q8_0.gguf"
+
+                try {
+                    modelFile.outputStream().use { out ->
+                        java.net.URL(modelUrl).openStream().use { input ->
+                            input.copyTo(out)
+                        }
+                    }
+                    Log.i("MyApp", "✅ Model manually downloaded to ${modelFile.absolutePath}")
+                } catch (e: Exception) {
+                    Log.e("MyApp", "❌ Manual download failed: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e("MyApp", "❌ Direct model load test failed: ${e.message}")
+            } else {
+                Log.i("MyApp", "✅ Model file already exists at: ${modelFile.absolutePath}")
             }
 
+            try {
+                val success = RunAnywhere.loadModel("SmolLM2 360M Q8_0")
+                if (success)
+                    Log.i("MyApp", "🚀 Successfully loaded SmolLM2 model directly in MyApplication.kt")
+                else
+                    Log.w("MyApp", "⚠️ Model load returned false — possible memory limit on emulator")
+            } catch (e: Exception) {
+                Log.e("MyApp", "❌ Direct model load failed: ${e.message}")
+            }
 
-            // Step 5: Sanity test – list models
             try {
                 val models = listAvailableModels()
                 Log.i("MyApp", "📦 Models available: ${models.map { it.name }}")
@@ -73,7 +89,6 @@ class MyApplication : Application() {
 
     private suspend fun registerModels() {
         try {
-            // ⚡ Small model – should load on most emulators and phones
             addModelFromURL(
                 url = "https://huggingface.co/Triangle104/SmolLM2-360M-Q8_0-GGUF/resolve/main/smollm2-360m-q8_0.gguf",
                 name = "SmolLM2 360M Q8_0",
@@ -81,14 +96,12 @@ class MyApplication : Application() {
             )
             Log.i("MyApp", "📦 Registered SmolLM2 360M Q8_0")
 
-            // 🧠 Larger model (optional — may fail on emulators)
             addModelFromURL(
                 url = "https://huggingface.co/Triangle104/Qwen2.5-0.5B-Instruct-Q6_K-GGUF/resolve/main/qwen2.5-0.5b-instruct-q6_k.gguf",
                 name = "Qwen 2.5 0.5B Instruct Q6_K",
                 type = "LLM"
             )
             Log.i("MyApp", "📦 Registered Qwen 2.5 0.5B Instruct Q6_K")
-
         } catch (e: Exception) {
             Log.e("MyApp", "⚠️ Error registering models: ${e.message}")
         }
