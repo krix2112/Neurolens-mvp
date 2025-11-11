@@ -15,31 +15,53 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.runanywhere.startup_hackathon20.ui.theme.Startup_hackathon20Theme
+import android.util.Log
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i("MainActivity", "🚀 onCreate() starting - enabling UI")
         enableEdgeToEdge()
         setContent {
             Startup_hackathon20Theme {
                 ChatScreen()
             }
         }
+        Log.i("MainActivity", "✅ Main UI displayed - background initialization continuing...")
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
+    // Log when ChatScreen composable is first created
+    DisposableEffect(Unit) {
+        Log.i("ChatScreen", "✅ ChatScreen composable displayed")
+        onDispose { }
+    }
+
+    // Collect states efficiently
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
     val downloadProgress by viewModel.downloadProgress.collectAsState()
     val currentModelId by viewModel.currentModelId.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
+    val isMockMode by viewModel.isMockMode.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSelector by remember { mutableStateOf(false) }
+
+    // Compute enabled state for input field
+    val isInputEnabled = remember(isLoading, currentModelId, isMockMode) {
+        !isLoading && (currentModelId != null || isMockMode)
+    }
+
+    // Compute enabled state for send button
+    val isSendEnabled = remember(isLoading, inputText, currentModelId, isMockMode) {
+        !isLoading && inputText.isNotBlank() && (currentModelId != null || isMockMode)
+    }
 
     Scaffold(
         topBar = {
@@ -87,7 +109,9 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                     currentModelId = currentModelId,
                     onDownload = { modelId -> viewModel.downloadModel(modelId) },
                     onLoad = { modelId -> viewModel.loadModel(modelId) },
-                    onRefresh = { viewModel.refreshModels() }
+                    onRefresh = { viewModel.refreshModels() },
+                    isMockMode = isMockMode,
+                    onToggleMockMode = { viewModel.toggleMockMode() }
                 )
             }
 
@@ -100,14 +124,18 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages) { message ->
+                items(
+                    items = messages,
+                    key = { message -> "${message.text.hashCode()}_${message.isUser}" }
+                ) { message ->
                     MessageBubble(message)
                 }
             }
 
-            // Auto-scroll to bottom when new messages arrive
+            // Auto-scroll to bottom when new messages arrive (throttled)
             LaunchedEffect(messages.size) {
                 if (messages.isNotEmpty()) {
+                    delay(100) // Small delay to batch scroll operations
                     listState.animateScrollToItem(messages.size - 1)
                 }
             }
@@ -124,7 +152,8 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                     onValueChange = { inputText = it },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Type a message...") },
-                    enabled = !isLoading && currentModelId != null
+                    enabled = isInputEnabled,
+                    singleLine = true
                 )
 
                 Button(
@@ -134,7 +163,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                             inputText = ""
                         }
                     },
-                    enabled = !isLoading && inputText.isNotBlank() && currentModelId != null
+                    enabled = isSendEnabled
                 ) {
                     Text("Send")
                 }
@@ -175,7 +204,9 @@ fun ModelSelector(
     currentModelId: String?,
     onDownload: (String) -> Unit,
     onLoad: (String) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    isMockMode: Boolean,
+    onToggleMockMode: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -185,7 +216,8 @@ fun ModelSelector(
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
                 Text(
                     text = "Available Models",
@@ -198,18 +230,59 @@ fun ModelSelector(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Mock Mode Toggle - Always visible at top
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isMockMode)
+                        MaterialTheme.colorScheme.tertiaryContainer
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Mock Mode",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "Test without loading model",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = isMockMode,
+                        onCheckedChange = { onToggleMockMode() }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             if (models.isEmpty()) {
                 Text(
                     text = "No models available. Initializing...",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(8.dp)
                 )
             } else {
                 LazyColumn(
-                    modifier = Modifier.heightIn(max = 300.dp),
+                    modifier = Modifier.heightIn(max = 250.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(models) { model ->
+                    items(
+                        items = models,
+                        key = { model -> model.id }
+                    ) { model ->
                         ModelItem(
                             model = model,
                             isLoaded = model.id == currentModelId,
@@ -246,16 +319,16 @@ fun ModelItem(
             )
 
             if (isLoaded) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "✓ Currently Loaded",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
             } else {
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
@@ -263,15 +336,18 @@ fun ModelItem(
                         modifier = Modifier.weight(1f),
                         enabled = !model.isDownloaded
                     ) {
-                        Text(if (model.isDownloaded) "Downloaded" else "Download")
+                        Text(
+                            text = if (model.isDownloaded) "Downloaded" else "Download",
+                            maxLines = 1
+                        )
                     }
 
                     Button(
                         onClick = onLoad,
                         modifier = Modifier.weight(1f),
-                        enabled = model.isDownloaded
+                        enabled = model.isDownloaded && !isLoaded
                     ) {
-                        Text("Load")
+                        Text("Load", maxLines = 1)
                     }
                 }
             }

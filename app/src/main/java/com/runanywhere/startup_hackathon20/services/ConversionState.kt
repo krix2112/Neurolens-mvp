@@ -6,5 +6,6 @@ data class ConversationState(
     val lastMessage: String = "",
     val modelLoaded: Boolean = false,
     val isMockMode: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val detailedResponse: String? = null  // For ChatGPT-like detailed responses
 )
