@@ -44,6 +44,8 @@ object OllamaService {
      */
     suspend fun testConnection(): Boolean = withContext(Dispatchers.IO) {
         try {
+            Log.i(TAG, "🔍 Testing connection to: $baseUrl/api/tags")
+
             val request = Request.Builder()
                 .url("$baseUrl/api/tags")
                 .get()
@@ -54,16 +56,55 @@ object OllamaService {
             
             if (isSuccess) {
                 val body = response.body?.string()
-                Log.i(TAG, "✅ Connected to Ollama server")
-                Log.d(TAG, "Available models: $body")
+                Log.i(TAG, "✅ Connected to Ollama server successfully")
+                Log.d(TAG, "Response: $body")
+
+                // Parse and log available models
+                try {
+                    val json = JSONObject(body ?: "{}")
+                    val modelsArray = json.optJSONArray("models")
+                    if (modelsArray != null && modelsArray.length() > 0) {
+                        Log.i(TAG, "📋 Server has ${modelsArray.length()} models available")
+                        for (i in 0 until modelsArray.length()) {
+                            val modelName = modelsArray.getJSONObject(i).getString("name")
+                            Log.d(TAG, "  - $modelName")
+                        }
+                    } else {
+                        Log.w(
+                            TAG,
+                            "⚠️ Server connected but has no models. Run 'ollama pull llama2' first"
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not parse models list: ${e.message}")
+                }
             } else {
-                Log.e(TAG, "❌ Connection failed: ${response.code}")
+                Log.e(TAG, "❌ Connection failed with HTTP ${response.code}: ${response.message}")
+                Log.e(TAG, "💡 Make sure Ollama is running: 'ollama serve'")
             }
             
             response.close()
             isSuccess
+        } catch (e: java.net.ConnectException) {
+            Log.e(TAG, "❌ Connection refused - Ollama server not running or wrong URL")
+            Log.e(TAG, "💡 From Android Emulator, use: http://10.0.2.2:11434")
+            Log.e(TAG, "💡 From physical device, use: http://YOUR_PC_IP:11434")
+            Log.e(TAG, "💡 Make sure to start Ollama: 'ollama serve'")
+            false
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(TAG, "❌ Unknown host: ${e.message}")
+            Log.e(TAG, "💡 Check your server URL - should be http://10.0.2.2:11434 for emulator")
+            false
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e(TAG, "❌ Connection timeout - server too slow or not responding")
+            Log.e(TAG, "💡 Check if Ollama server is running: 'ollama list'")
+            false
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Connection error: ${e.message}", e)
+            Log.e(TAG, "❌ Connection error: ${e.javaClass.simpleName}: ${e.message}", e)
+            Log.e(TAG, "💡 Troubleshooting:")
+            Log.e(TAG, "   1. Start Ollama: 'ollama serve'")
+            Log.e(TAG, "   2. Pull a model: 'ollama pull llama2'")
+            Log.e(TAG, "   3. Use correct URL: http://10.0.2.2:11434 (emulator)")
             false
         }
     }

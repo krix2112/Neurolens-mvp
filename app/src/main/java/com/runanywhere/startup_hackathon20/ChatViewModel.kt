@@ -402,19 +402,25 @@ class ChatViewModel : ViewModel() {
                     _ollamaConnected.value = connected
                     if (connected) {
                         _statusMessage.value = "Ollama connected ✓"
+                        _modelSource.value = ModelSource.OLLAMA
+                        _currentModelId.value = modelName
+                        _isMockMode.value = false
                         Log.i("ChatVM", "✅ Ollama connected successfully")
                         // Load available models
                         loadOllamaModels()
                     } else {
-                        _statusMessage.value = "Ollama connection failed"
-                        Log.e("ChatVM", "❌ Ollama connection failed")
+                        _statusMessage.value = "❌ Connection failed - Check logcat for details"
+                        Log.e(
+                            "ChatVM",
+                            "❌ Ollama connection failed - see OllamaService logs for troubleshooting"
+                        )
                     }
                 }
             } catch (e: Exception) {
                 Log.e("ChatVM", "❌ Ollama configuration error: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     _ollamaConnected.value = false
-                    _statusMessage.value = "Ollama error: ${e.message}"
+                    _statusMessage.value = "❌ Error: ${e.message}"
                 }
             }
         }
